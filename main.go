@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 
 	"github.com/gardener/etcd-backup-restore/cmd"
 )
@@ -30,6 +31,10 @@ func main() {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
 
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(defaultGCPercent)
+	}
+
 	stopCh := setupSignalHandler()
 	command := cmd.NewBackupRestoreCommand(stopCh)
 	if err := command.Execute(); err != nil {
@@ -37,6 +42,8 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+const defaultGCPercent = 90
 
 // SetupSignalHandler registered for SIGTERM and SIGINT. A stop channel is returned
 // which is closed on one of these signals. If a second signal is caught, the program
