@@ -16,6 +16,6 @@ FROM alpine:3.7
 
 RUN apk add --update bash curl
 
-COPY ./bin/linux-amd64/etcdbrctl /usr/local/bin/etcdbrctl
+COPY etcdbrctl /usr/local/bin/etcdbrctl
 WORKDIR /
 ENTRYPOINT ["/usr/local/bin/etcdbrctl"]

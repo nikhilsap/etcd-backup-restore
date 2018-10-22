@@ -19,15 +19,15 @@ set -e
 # SOURCE_PATH - path to component repository root directory.
 # BINARY_PATH - path to an existing (empty) directory to place build results into.
 if [[ -z "${SOURCE_PATH}" ]]; then
-  export SOURCE_PATH="$(readlink -f $(dirname ${0})/..)"
+  export SOURCE_PATH="$(greadlink -f $(dirname ${0})/..)"
 else
-  export SOURCE_PATH="$(readlink -f "${SOURCE_PATH}")"
+  export SOURCE_PATH="$(greadlink -f "${SOURCE_PATH}")"
 fi
 
 if [[ -z "${BINARY_PATH}" ]]; then
   export BINARY_PATH="${SOURCE_PATH}/bin"
 else
-  export BINARY_PATH="$(readlink -f "${BINARY_PATH}")/bin"
+  export BINARY_PATH="$(greadlink -f "${BINARY_PATH}")/bin"
 fi
 
 VCS="github.com"
@@ -54,7 +54,7 @@ fi
 
 ###############################################################################
 
-VERSION_FILE="$(readlink  -f "${SOURCE_PATH}/VERSION")"
+VERSION_FILE="$(greadlink  -f "${SOURCE_PATH}/VERSION")"
 VERSION="$(cat "${VERSION_FILE}")"
 
 # If no LOCAL_BUILD environment variable is set, we configure the `go build` command

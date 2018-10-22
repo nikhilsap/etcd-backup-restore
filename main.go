@@ -21,19 +21,24 @@ import (
 	"runtime"
 	"runtime/debug"
 
-	"github.com/gardener/etcd-backup-restore/cmd"
+//	"github.com/gardener/etcd-backup-restore/cmd"
 )
 
 var onlyOneSignalHandler = make(chan struct{})
+
+const defaultGCPercent = 90
 
 func main() {
 	if len(os.Getenv("GOMAXPROCS")) == 0 {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
 
-	if os.Getenv("GOGC") == "" {
-		debug.SetGCPercent(defaultGCPercent)
-	}
+  prev := debug.SetGCPercent(0)
+	fmt.Println(prev)
+	debug.SetGCPercent(defaultGCPercent)
+	new := debug.SetGCPercent(0)
+	fmt.Println(new)
+
 
 	stopCh := setupSignalHandler()
 	command := cmd.NewBackupRestoreCommand(stopCh)
@@ -43,7 +48,7 @@ func main() {
 	}
 }
 
-const defaultGCPercent = 90
+
 
 // SetupSignalHandler registered for SIGTERM and SIGINT. A stop channel is returned
 // which is closed on one of these signals. If a second signal is caught, the program
