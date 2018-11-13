@@ -17,7 +17,9 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gardener/etcd-backup-restore/pkg/initializer"
 	"github.com/sirupsen/logrus"
@@ -30,6 +32,26 @@ const (
 	initializationStatusFailed     = "Failed"
 )
 
+var emptyStruct struct{}
+
+// HandlerAckState denotes the state the handler would be in after sending a stop request to the snapshotter.
+type HandlerAckState int32
+
+const (
+	// HandlerAckDone is set when handler has been acknowledged of snapshotter termination.
+	HandlerAckDone uint32 = 0
+	// HandlerAckWaiting is set when handler starts waiting of snapshotter termination.
+	HandlerAckWaiting uint32 = 1
+)
+
+// HandlerRequest represents the type of request handler makes to the snapshotter.
+type HandlerRequest int
+
+const (
+	// HandlerSsrAbort is the HandlerRequest to the snapshotter to terminate the snapshot process.
+	HandlerSsrAbort HandlerRequest = 0
+)
+
 // HTTPHandler is implementation to handle HTTP API exposed by server
 type HTTPHandler struct {
 	EtcdInitializer           initializer.EtcdInitializer
@@ -37,28 +59,56 @@ type HTTPHandler struct {
 	server                    *http.Server
 	Logger                    *logrus.Logger
 	initializationStatusMutex sync.Mutex
+	AckState                  uint32
 	initializationStatus      string
 	Status                    int
 	StopCh                    chan struct{}
+	EnableProfiling           bool
+	ReqCh                     chan struct{}
+	AckCh                     chan struct{}
 }
 
 // RegisterHandler registers the handler for different requests
 func (h *HTTPHandler) RegisterHandler() {
+	mux := http.NewServeMux()
+	if h.EnableProfiling {
+		registerPProfHandler(mux)
+	}
+
 	h.initializationStatus = "New"
-	http.HandleFunc("/initialization/start", h.serveInitialize)
-	http.HandleFunc("/initialization/status", h.serveInitializationStatus)
-	http.HandleFunc("/healthz", h.serveHealthz)
+	mux.HandleFunc("/initialization/start", h.serveInitialize)
+	mux.HandleFunc("/initialization/status", h.serveInitializationStatus)
+	mux.HandleFunc("/healthz", h.serveHealthz)
+
+	h.server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", h.Port),
+		Handler: mux,
+	}
 	return
+}
+
+// registerPProfHandler registers the PProf handler for profiling.
+func registerPProfHandler(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/heap", pprof.Handler("heap").ServeHTTP)
+	mux.HandleFunc("/debug/pprof/goroutine", pprof.Handler("goroutine").ServeHTTP)
+	mux.HandleFunc("/debug/pprof/threadcreate", pprof.Handler("threadcreate").ServeHTTP)
+	mux.HandleFunc("/debug/pprof/block", pprof.Handler("block").ServeHTTP)
+	mux.HandleFunc("/debug/pprof/mutex", pprof.Handler("mutex").ServeHTTP)
 }
 
 // Start start the http server to listen for request
 func (h *HTTPHandler) Start() {
-	h.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", h.Port),
-		Handler: nil,
-	}
+	h.Logger.Infof("Starting Http server at addr: %s", h.server.Addr)
 	err := h.server.ListenAndServe()
-	h.Logger.Fatalf("Failed to start http server: %v", err)
+	if err != nil && err != http.ErrServerClosed {
+		h.Logger.Fatalf("Failed to start http server: %v", err)
+	}
+	h.Logger.Infof("Http server closed gracefully.")
 	return
 }
 
@@ -84,8 +134,11 @@ func (h *HTTPHandler) serveInitialize(rw http.ResponseWriter, req *http.Request)
 		h.initializationStatus = initializationStatusProgress
 		go func() {
 			// This is needed to stop snapshotter.
-			var s struct{}
-			h.StopCh <- s
+			atomic.StoreUint32(&h.AckState, HandlerAckWaiting)
+			h.Logger.Info("Changed handler state.")
+			h.ReqCh <- emptyStruct
+			h.Logger.Info("Waiting for acknowledgment...")
+			<-h.AckCh
 			err := h.EtcdInitializer.Initialize()
 			h.initializationStatusMutex.Lock()
 			defer h.initializationStatusMutex.Unlock()
@@ -93,6 +146,8 @@ func (h *HTTPHandler) serveInitialize(rw http.ResponseWriter, req *http.Request)
 				h.Logger.Errorf("Failed initialization: %v", err)
 				rw.WriteHeader(http.StatusInternalServerError)
 				h.initializationStatus = initializationStatusFailed
+				// Optional: Event if we send start signal it wi
+				// h.ReqCh <- HandlerSsrStart
 				return
 			}
 			h.Logger.Infof("Successfully initialized data directory \"%s\" for etcd.", h.EtcdInitializer.Validator.Config.DataDir)
