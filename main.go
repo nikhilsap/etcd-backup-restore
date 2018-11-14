@@ -21,7 +21,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
-//	"github.com/gardener/etcd-backup-restore/cmd"
+	"github.com/gardener/etcd-backup-restore/cmd"
 )
 
 var onlyOneSignalHandler = make(chan struct{})
@@ -32,11 +32,11 @@ func main() {
 	if len(os.Getenv("GOMAXPROCS")) == 0 {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
-
+  os.Setenv("GODEBUG", "gotrace=1")
   prev := debug.SetGCPercent(0)
 	fmt.Println(prev)
 	debug.SetGCPercent(defaultGCPercent)
-	new := debug.SetGCPercent(0)
+	new := debug.SetGCPercent(defaultGCPercent)
 	fmt.Println(new)
 
 
