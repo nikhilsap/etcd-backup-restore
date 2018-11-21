@@ -26,7 +26,7 @@ import (
 
 var onlyOneSignalHandler = make(chan struct{})
 
-const defaultGCPercent = 150
+const defaultGCPercent = 1000
 
 func main() {
 	if len(os.Getenv("GOMAXPROCS")) == 0 {
